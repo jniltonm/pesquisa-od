@@ -278,3 +278,27 @@ select option {
   margin-top: 1rem;
   margin-bottom: 1rem;
 }
+
+/* Responsividade para Celulares (Mobile) */
+@media (max-width: 768px) {
+  .flex-half {
+    flex: 1 1 100%;
+  }
+  
+  .survey-card {
+    padding: 1.5rem 1rem;
+  }
+  
+  .survey-card h2 {
+    font-size: 1.75rem;
+  }
+  
+  .section-title {
+    font-size: 1.15rem;
+  }
+  
+  select, .input-field {
+    padding: 1rem;
+    font-size: 1.05rem;
+  }
+}
