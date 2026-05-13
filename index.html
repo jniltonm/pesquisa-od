@@ -84,6 +84,9 @@
         if (formData.veiculo_tipo !== 'Passeio') {
           setFormData(prev => ({ ...prev, renda_motorista: '' }));
         }
+        if (formData.veiculo_tipo === 'Passeio' || formData.veiculo_tipo === 'Moto') {
+          setFormData(prev => ({ ...prev, veiculo_eixos: '', veiculo_eixos_susp: '' }));
+        }
       }, [formData.veiculo_tipo]);
 
       useEffect(() => {
@@ -239,7 +242,6 @@
         <div className="survey-container">
           <div className="survey-card" style={{ maxWidth: '800px' }}>
             <h2>PESQUISA O&D - BR-381</h2>
-            <p className="subtitle">Formulário Oficial (Dicionário de Dados)</p>
             
             {pendingSyncCount > 0 && (
               <div className="sync-banner">
@@ -308,14 +310,18 @@
                   <label htmlFor="veiculo_ano">Ano do Veículo</label>
                   <input type="number" id="veiculo_ano" className="input-field" value={formData.veiculo_ano} onChange={handleChange} required />
                 </div>
-                <div className="form-group flex-half">
-                  <label htmlFor="veiculo_eixos">Total de Eixos</label>
-                  <input type="number" id="veiculo_eixos" className="input-field" value={formData.veiculo_eixos} onChange={handleChange} required />
-                </div>
-                <div className="form-group flex-half">
-                  <label htmlFor="veiculo_eixos_susp">Eixos Suspensos</label>
-                  <input type="number" id="veiculo_eixos_susp" className="input-field" value={formData.veiculo_eixos_susp} onChange={handleChange} required />
-                </div>
+                {['Ônibus', 'Carga'].includes(formData.veiculo_tipo) && (
+                  <React.Fragment>
+                    <div className="form-group flex-half slide-down">
+                      <label htmlFor="veiculo_eixos">Total de Eixos</label>
+                      <input type="number" id="veiculo_eixos" className="input-field" value={formData.veiculo_eixos} onChange={handleChange} required />
+                    </div>
+                    <div className="form-group flex-half slide-down">
+                      <label htmlFor="veiculo_eixos_susp">Eixos Suspensos</label>
+                      <input type="number" id="veiculo_eixos_susp" className="input-field" value={formData.veiculo_eixos_susp} onChange={handleChange} required />
+                    </div>
+                  </React.Fragment>
+                )}
                 
                 {formData.veiculo_tipo === 'Carga' && (
                   <div className="form-group flex-half slide-down">
@@ -415,6 +421,7 @@
                         <option value="Até 2 salários">Até 2 salários</option>
                         <option value="De 2 a 5">De 2 a 5 salários</option>
                         <option value="Mais de 5">Mais de 5 salários</option>
+                        <option value="Não informado">Não informado</option>
                       </select>
                     </div>
                   </div>
