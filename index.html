@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pesquisa O&D - BR-381</title>
+  
+  <link rel="stylesheet" href="TrafficSurvey.css">
+  
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { createClient } = window.supabase;
+
+    const supabaseUrl = 'https://xuvnzyzgtdfzkfhpunsd.supabase.co';
+    const supabaseKey = 'sb_publishable_kmaozF-wvQqA-NNfPbhFVQ_FwrTU4-5';
+    const supabaseClient = createClient(supabaseUrl, supabaseKey);
+
+    function TrafficSurvey() {
+      const [cities, setCities] = useState([]);
+      const [loading, setLoading] = useState(false);
+      const [message, setMessage] = useState('');
+      const [messageType, setMessageType] = useState('');
+      const [pendingSyncCount, setPendingSyncCount] = useState(0);
+      const [syncing, setSyncing] = useState(false);
+
+      const [originInput, setOriginInput] = useState('');
+      const [destinationInput, setDestinationInput] = useState('');
+
+      const [formData, setFormData] = useState({
+        entrevistador: '', posto_pesquisa: '', km: '', sentido: '',
+        veiculo_tipo: '', veiculo_marca: '', veiculo_modelo: '', veiculo_ano: '', veiculo_eixos: '', veiculo_eixos_susp: '', veiculo_propriedade: '', placa_final: '',
+        ocupantes_qntd: '', origem_uso_solo: '', destino_uso_solo: '', tempo_viagem_estimado: '', frequencia_qntd: '', frequencia_unid: '', motivo_viagem: '', renda_motorista: '',
+        utilizou_pedagio: '', financiador_pedagio: '', tag_adesao: '', tag_interesse_desconto: '', conhece_rota_alt: '', rota_alt_rodovia: '', motivo_escolha_rota: '', decisor_rota: '',
+        midia_ouvinte_radio: '', midia_radio_preferida: '', midia_interesse_radio_nova381: '',
+        carga_situacao: '', carga_ponto_carregamento: '', carga_ponto_descarregamento: '', carga_container: '', carga_mercadoria: '', obs: ''
+      });
+
+      const handleChange = (e) => {
+        const { id, value } = e.target;
+        setFormData(prev => ({ ...prev, [id]: value }));
+      };
+
+      const updateSyncCount = () => {
+        try {
+          const stored = JSON.parse(localStorage.getItem('pesquisas_od_offline') || '[]');
+          setPendingSyncCount(stored.length);
+        } catch (e) {
+          setPendingSyncCount(0);
+        }
+      };
+
+      useEffect(() => {
+        updateSyncCount();
+        const handleOnline = () => handleSync();
+        window.addEventListener('online', handleOnline);
+
+        async function fetchCities() {
+          try {
+            const response = await fetch('https://servicodados.ibge.gov.br/api/v1/localidades/municipios?ordenar=nome');
+            if (!response.ok) throw new Error('Falha na API');
+            const data = await response.json();
+            setCities(data);
+          } catch (error) {
+            console.error("Erro ao buscar cidades:", error);
+          }
+        }
+        fetchCities();
+
+        return () => window.removeEventListener('online', handleOnline);
+      }, []);
+
+      useEffect(() => {
+        if (formData.veiculo_tipo !== 'Carga') {
+          setFormData(prev => ({ ...prev, veiculo_propriedade: '', decisor_rota: '', carga_situacao: '', carga_ponto_carregamento: '', carga_ponto_descarregamento: '', carga_container: '', carga_mercadoria: '' }));
+        }
+        if (formData.veiculo_tipo !== 'Passeio') {
+          setFormData(prev => ({ ...prev, renda_motorista: '' }));
+        }
+      }, [formData.veiculo_tipo]);
+
+      useEffect(() => {
+        if (formData.utilizou_pedagio !== 'Sim') setFormData(prev => ({ ...prev, financiador_pedagio: '' }));
+        if (formData.tag_adesao !== 'Não') setFormData(prev => ({ ...prev, tag_interesse_desconto: '' }));
+        if (formData.conhece_rota_alt !== 'Sim') setFormData(prev => ({ ...prev, rota_alt_rodovia: '' }));
+        if (formData.midia_ouvinte_radio !== 'Sim') setFormData(prev => ({ ...prev, midia_radio_preferida: '' }));
+        if (formData.carga_situacao !== 'Carregado') setFormData(prev => ({ ...prev, carga_ponto_carregamento: '', carga_ponto_descarregamento: '', carga_container: '', carga_mercadoria: '' }));
+      }, [formData.utilizou_pedagio, formData.tag_adesao, formData.conhece_rota_alt, formData.midia_ouvinte_radio, formData.carga_situacao]);
+
+      const handleSync = async () => {
+        try {
+          const stored = JSON.parse(localStorage.getItem('pesquisas_od_offline') || '[]');
+          if (stored.length === 0) return;
+
+          setSyncing(true);
+          setMessage('');
+          
+          const payload = stored.map(item => {
+            const copy = { ...item };
+            delete copy._localId;
+            delete copy._timestamp;
+            return copy;
+          });
+
+          const { error } = await supabaseClient.from('pesquisas_od').insert(payload);
+
+          if (error) throw error;
+
+          localStorage.removeItem('pesquisas_od_offline');
+          updateSyncCount();
+          setMessageType('success');
+          setMessage(`BOM TRABALHO! ${stored.length} pesquisa(s) offline sincronizada(s) na nuvem!`);
+        } catch (error) {
+          console.error('Erro na sincronização', error);
+          setMessageType('error');
+          setMessage(`Erro do Banco: ${error.message || 'Dados incompatíveis'}. (Limpe o cache se for uma pesquisa antiga)`);
+        } finally {
+          setSyncing(false);
+        }
+      };
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setMessage('');
+
+        const cityOrigin = Array.isArray(cities) ? cities.find(c => {
+          const uf = c?.microrregiao?.mesorregiao?.UF?.sigla;
+          const label = uf ? `${c.nome} - ${uf}` : c.nome;
+          return label === originInput;
+        }) : null;
+
+        if (!cityOrigin) {
+          setMessage('Cidade de Origem inválida. Selecione uma opção sugerida na lista.');
+          setMessageType('error');
+          setLoading(false);
+          return;
+        }
+
+        const cityDestination = Array.isArray(cities) ? cities.find(c => {
+          const uf = c?.microrregiao?.mesorregiao?.UF?.sigla;
+          const label = uf ? `${c.nome} - ${uf}` : c.nome;
+          return label === destinationInput;
+        }) : null;
+
+        if (!cityDestination) {
+          setMessage('Cidade de Destino inválida. Selecione uma opção sugerida na lista.');
+          setMessageType('error');
+          setLoading(false);
+          return;
+        }
+
+        const kmDecimal = parseFloat(formData.km.replace(',', '.'));
+        if (isNaN(kmDecimal)) {
+          setMessage('O valor do KM deve ser um número válido.');
+          setMessageType('error');
+          setLoading(false);
+          return;
+        }
+
+        const payload = {
+          ...formData,
+          km: kmDecimal,
+          veiculo_ano: formData.veiculo_ano ? parseInt(formData.veiculo_ano) : null,
+          veiculo_eixos: formData.veiculo_eixos ? parseInt(formData.veiculo_eixos) : null,
+          veiculo_eixos_susp: formData.veiculo_eixos_susp ? parseInt(formData.veiculo_eixos_susp) : null,
+          ocupantes_qntd: formData.ocupantes_qntd ? parseInt(formData.ocupantes_qntd) : null,
+          frequencia_qntd: formData.frequencia_qntd ? parseInt(formData.frequencia_qntd) : null,
+          utilizou_pedagio: formData.utilizou_pedagio === 'Sim',
+          tag_adesao: formData.tag_adesao === 'Sim',
+          tag_interesse_desconto: formData.tag_interesse_desconto === 'Sim',
+          conhece_rota_alt: formData.conhece_rota_alt === 'Sim',
+          midia_ouvinte_radio: formData.midia_ouvinte_radio === 'Sim',
+          midia_interesse_radio_nova381: formData.midia_interesse_radio_nova381 === 'Sim',
+          carga_container: formData.carga_container === 'Sim',
+          origem_municipio: cityOrigin.nome, 
+          origem_ibge_id: parseInt(cityOrigin.id),
+          destino_municipio: cityDestination.nome, 
+          destino_ibge_id: parseInt(cityDestination.id)
+        };
+
+        const localId = Date.now().toString();
+        const offlineRecord = { ...payload, _localId: localId, _timestamp: new Date().toISOString() };
+        
+        try {
+          const stored = JSON.parse(localStorage.getItem('pesquisas_od_offline') || '[]');
+          stored.push(offlineRecord);
+          localStorage.setItem('pesquisas_od_offline', JSON.stringify(stored));
+          updateSyncCount();
+        } catch (e) {
+          console.error('Erro ao acessar LocalStorage:', e);
+        }
+
+        try {
+          const { data, error } = await supabaseClient.from('pesquisas_od').insert([payload]);
+
+          if (error) throw error;
+          
+          const stored = JSON.parse(localStorage.getItem('pesquisas_od_offline') || '[]');
+          const synced = stored.filter(item => item._localId !== localId);
+          localStorage.setItem('pesquisas_od_offline', JSON.stringify(synced));
+          updateSyncCount();
+
+          setMessageType('success');
+          setMessage('SINCRONIZADO: Pesquisa enviada direto pro banco!');
+        } catch (error) {
+          console.warn('Erro de conexão/Supabase (Salvo apenas localmente):', error);
+          setMessageType('warning');
+          setMessage(`OFFLINE: ${error.message || 'Sem rede'}. Pesquisa SALVA LOCALMENTE no tablet!`);
+        } finally {
+          setLoading(false);
+          
+          setOriginInput('');
+          setDestinationInput('');
+          setFormData({
+            entrevistador: formData.entrevistador,
+            posto_pesquisa: formData.posto_pesquisa,
+            km: formData.km,
+            sentido: formData.sentido,
+            veiculo_tipo: '', veiculo_marca: '', veiculo_modelo: '', veiculo_ano: '', veiculo_eixos: '', veiculo_eixos_susp: '', veiculo_propriedade: '', placa_final: '',
+            ocupantes_qntd: '', origem_uso_solo: '', destino_uso_solo: '', tempo_viagem_estimado: '', frequencia_qntd: '', frequencia_unid: '', motivo_viagem: '', renda_motorista: '',
+            utilizou_pedagio: '', financiador_pedagio: '', tag_adesao: '', tag_interesse_desconto: '', conhece_rota_alt: '', rota_alt_rodovia: '', motivo_escolha_rota: '', decisor_rota: '',
+            midia_ouvinte_radio: '', midia_radio_preferida: '', midia_interesse_radio_nova381: '',
+            carga_situacao: '', carga_ponto_carregamento: '', carga_ponto_descarregamento: '', carga_container: '', carga_mercadoria: '', obs: ''
+          });
+          
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      };
+
+      return (
+        <div className="survey-container">
+          <div className="survey-card" style={{ maxWidth: '800px' }}>
+            <h2>PESQUISA O&D - BR-381</h2>
+            <p className="subtitle">Formulário Oficial (Dicionário de Dados)</p>
+            
+            {pendingSyncCount > 0 && (
+              <div className="sync-banner">
+                <span>⚠️ {pendingSyncCount} pesquisa(s) offline na memória</span>
+                <button type="button" onClick={handleSync} disabled={syncing} className="sync-btn">
+                  {syncing ? 'Enviando...' : 'Sincronizar Nuvem'}
+                </button>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit}>
+              
+              <h3 className="section-title">1. Identificação</h3>
+              <div className="flex-row">
+                <div className="form-group flex-half">
+                  <label htmlFor="entrevistador">Nome do Entrevistador</label>
+                  <input type="text" id="entrevistador" className="input-field" value={formData.entrevistador} onChange={handleChange} required />
+                </div>
+                <div className="form-group flex-half">
+                  <label htmlFor="posto_pesquisa">Posto de Pesquisa</label>
+                  <input type="text" id="posto_pesquisa" className="input-field" value={formData.posto_pesquisa} onChange={handleChange} required />
+                </div>
+                <div className="form-group flex-half">
+                  <label htmlFor="km">KM</label>
+                  <input type="text" id="km" className="input-field" value={formData.km} onChange={handleChange} required />
+                </div>
+                <div className="form-group flex-half">
+                  <label htmlFor="sentido">Sentido</label>
+                  <div className="select-wrapper">
+                    <select id="sentido" value={formData.sentido} onChange={handleChange} required>
+                      <option value="" disabled>Selecione...</option>
+                      <option value="Leste">Leste (BH-GV)</option>
+                      <option value="Oeste">Oeste (GV-BH)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <h3 className="section-title">2. Perfil do Veículo</h3>
+              <div className="flex-row">
+                <div className="form-group flex-half">
+                  <label htmlFor="veiculo_tipo">Tipo do Veículo</label>
+                  <div className="select-wrapper">
+                    <select id="veiculo_tipo" value={formData.veiculo_tipo} onChange={handleChange} required>
+                      <option value="" disabled>Selecione...</option>
+                      <option value="Passeio">Passeio</option>
+                      <option value="Moto">Moto</option>
+                      <option value="Ônibus">Ônibus</option>
+                      <option value="Carga">Carga</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-group flex-half">
+                  <label htmlFor="placa_final">Final da Placa (Opcional)</label>
+                  <input type="text" id="placa_final" className="input-field" maxLength="1" value={formData.placa_final} onChange={handleChange} />
+                </div>
+                <div className="form-group flex-half">
+                  <label htmlFor="veiculo_marca">Marca</label>
+                  <input type="text" id="veiculo_marca" className="input-field" value={formData.veiculo_marca} onChange={handleChange} required />
+                </div>
+                <div className="form-group flex-half">
+                  <label htmlFor="veiculo_modelo">Modelo</label>
+                  <input type="text" id="veiculo_modelo" className="input-field" value={formData.veiculo_modelo} onChange={handleChange} required />
+                </div>
+                <div className="form-group flex-half">
+                  <label htmlFor="veiculo_ano">Ano do Veículo</label>
+                  <input type="number" id="veiculo_ano" className="input-field" value={formData.veiculo_ano} onChange={handleChange} required />
+                </div>
+                <div className="form-group flex-half">
+                  <label htmlFor="veiculo_eixos">Total de Eixos</label>
+                  <input type="number" id="veiculo_eixos" className="input-field" value={formData.veiculo_eixos} onChange={handleChange} required />
+                </div>
+                <div className="form-group flex-half">
+                  <label htmlFor="veiculo_eixos_susp">Eixos Suspensos</label>
+                  <input type="number" id="veiculo_eixos_susp" className="input-field" value={formData.veiculo_eixos_susp} onChange={handleChange} required />
+                </div>
+                
+                {formData.veiculo_tipo === 'Carga' && (
+                  <div className="form-group flex-half slide-down">
+                    <label htmlFor="veiculo_propriedade">Propriedade do Veículo</label>
+                    <div className="select-wrapper">
+                      <select id="veiculo_propriedade" value={formData.veiculo_propriedade} onChange={handleChange} required>
+                        <option value="" disabled>Selecione...</option>
+                        <option value="Frota">Frota da Empresa</option>
+                        <option value="Autônomo">Autônomo</option>
+                        <option value="Terceiro">Terceirizado</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <h3 className="section-title">3. Comportamento de Rota</h3>
+              <div className="flex-row">
+                <div className="form-group flex-full">
+                  <label htmlFor="ocupantes_qntd">Número Total de Ocupantes</label>
+                  <input type="number" id="ocupantes_qntd" className="input-field" value={formData.ocupantes_qntd} onChange={handleChange} required />
+                </div>
+                
+                <div className="form-group flex-half">
+                  <label htmlFor="city-origin">Município de Origem</label>
+                  <input id="city-origin" type="text" className="input-field" list="cities-list" value={originInput} onChange={(e) => setOriginInput(e.target.value)} required disabled={cities.length === 0} />
+                </div>
+                <div className="form-group flex-half">
+                  <label htmlFor="origem_uso_solo">Uso do Solo na Origem</label>
+                  <div className="select-wrapper">
+                    <select id="origem_uso_solo" value={formData.origem_uso_solo} onChange={handleChange} required>
+                      <option value="" disabled>Selecione...</option>
+                      <option value="Residencial">Residencial</option>
+                      <option value="Comercial">Comercial</option>
+                      <option value="Industrial">Industrial</option>
+                      <option value="Serviços">Serviços</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-group flex-half">
+                  <label htmlFor="city-destination">Município de Destino</label>
+                  <input id="city-destination" type="text" className="input-field" list="cities-list" value={destinationInput} onChange={(e) => setDestinationInput(e.target.value)} required disabled={cities.length === 0} />
+                </div>
+                <div className="form-group flex-half">
+                  <label htmlFor="destino_uso_solo">Uso do Solo no Destino</label>
+                  <div className="select-wrapper">
+                    <select id="destino_uso_solo" value={formData.destino_uso_solo} onChange={handleChange} required>
+                      <option value="" disabled>Selecione...</option>
+                      <option value="Residencial">Residencial</option>
+                      <option value="Comercial">Comercial</option>
+                      <option value="Industrial">Industrial</option>
+                      <option value="Serviços">Serviços</option>
+                    </select>
+                  </div>
+                </div>
+
+                <datalist id="cities-list">
+                  {cities.map((city) => {
+                    const uf = city?.microrregiao?.mesorregiao?.UF?.sigla;
+                    const label = uf ? `${city.nome} - ${uf}` : city.nome;
+                    return <option key={city.id} value={label} />;
+                  })}
+                </datalist>
+
+                <div className="form-group flex-half">
+                  <label htmlFor="tempo_viagem_estimado">Tempo Estimado (HH:MM)</label>
+                  <input type="text" id="tempo_viagem_estimado" className="input-field" value={formData.tempo_viagem_estimado} onChange={handleChange} placeholder="02:30" required />
+                </div>
+                <div className="form-group flex-half">
+                  <label htmlFor="motivo_viagem">Motivo da Viagem</label>
+                  <input type="text" id="motivo_viagem" className="input-field" value={formData.motivo_viagem} onChange={handleChange} required />
+                </div>
+                <div className="form-group flex-half">
+                  <label htmlFor="frequencia_qntd">Quantidade de Viagens</label>
+                  <input type="number" id="frequencia_qntd" className="input-field" value={formData.frequencia_qntd} onChange={handleChange} required />
+                </div>
+                <div className="form-group flex-half">
+                  <label htmlFor="frequencia_unid">Unidade de Frequência</label>
+                  <div className="select-wrapper">
+                    <select id="frequencia_unid" value={formData.frequencia_unid} onChange={handleChange} required>
+                      <option value="" disabled>Selecione...</option>
+                      <option value="Por dia">Por dia</option>
+                      <option value="Por semana">Por semana</option>
+                      <option value="Por mês">Por mês</option>
+                      <option value="Por ano">Por ano</option>
+                    </select>
+                  </div>
+                </div>
+
+                {formData.veiculo_tipo === 'Passeio' && (
+                  <div className="form-group flex-full slide-down">
+                    <label htmlFor="renda_motorista">Renda do Motorista</label>
+                    <div className="select-wrapper">
+                      <select id="renda_motorista" value={formData.renda_motorista} onChange={handleChange} required>
+                        <option value="" disabled>Selecione...</option>
+                        <option value="Até 2 salários">Até 2 salários</option>
+                        <option value="De 2 a 5">De 2 a 5 salários</option>
+                        <option value="Mais de 5">Mais de 5 salários</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+                
+                <div className="form-group flex-half">
+                  <label htmlFor="utilizou_pedagio">Utilizou Rodovia Pedagiada?</label>
+                  <div className="select-wrapper">
+                    <select id="utilizou_pedagio" value={formData.utilizou_pedagio} onChange={handleChange} required>
+                      <option value="" disabled>Selecione...</option><option value="Sim">Sim</option><option value="Não">Não</option>
+                    </select>
+                  </div>
+                </div>
+                {formData.utilizou_pedagio === 'Sim' && (
+                  <div className="form-group flex-half slide-down">
+                    <label htmlFor="financiador_pedagio">Quem pagou o pedágio?</label>
+                    <input type="text" id="financiador_pedagio" className="input-field" value={formData.financiador_pedagio} onChange={handleChange} required />
+                  </div>
+                )}
+
+                <div className="form-group flex-half">
+                  <label htmlFor="tag_adesao">Possui TAG (Sem Parar, etc)?</label>
+                  <div className="select-wrapper">
+                    <select id="tag_adesao" value={formData.tag_adesao} onChange={handleChange} required>
+                      <option value="" disabled>Selecione...</option><option value="Sim">Sim</option><option value="Não">Não</option>
+                    </select>
+                  </div>
+                </div>
+                {formData.tag_adesao === 'Não' && (
+                  <div className="form-group flex-half slide-down">
+                    <label htmlFor="tag_interesse_desconto">Teria interesse com desconto?</label>
+                    <div className="select-wrapper">
+                      <select id="tag_interesse_desconto" value={formData.tag_interesse_desconto} onChange={handleChange} required>
+                        <option value="" disabled>Selecione...</option><option value="Sim">Sim</option><option value="Não">Não</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                <div className="form-group flex-half">
+                  <label htmlFor="motivo_escolha_rota">Motivo da escolha desta rota</label>
+                  <input type="text" id="motivo_escolha_rota" className="input-field" value={formData.motivo_escolha_rota} onChange={handleChange} required />
+                </div>
+                {formData.veiculo_tipo === 'Carga' && (
+                  <div className="form-group flex-half slide-down">
+                    <label htmlFor="decisor_rota">Quem decidiu o trajeto?</label>
+                    <input type="text" id="decisor_rota" className="input-field" value={formData.decisor_rota} onChange={handleChange} required />
+                  </div>
+                )}
+
+                <div className="form-group flex-half">
+                  <label htmlFor="conhece_rota_alt">Conhece rota alternativa?</label>
+                  <div className="select-wrapper">
+                    <select id="conhece_rota_alt" value={formData.conhece_rota_alt} onChange={handleChange} required>
+                      <option value="" disabled>Selecione...</option><option value="Sim">Sim</option><option value="Não">Não</option>
+                    </select>
+                  </div>
+                </div>
+                {formData.conhece_rota_alt === 'Sim' && (
+                  <div className="form-group flex-half slide-down">
+                    <label htmlFor="rota_alt_rodovia">Qual rodovia alternativa?</label>
+                    <input type="text" id="rota_alt_rodovia" className="input-field" value={formData.rota_alt_rodovia} onChange={handleChange} required />
+                  </div>
+                )}
+              </div>
+
+              <h3 className="section-title">4. Mídia e Comunicação</h3>
+              <div className="flex-row">
+                <div className="form-group flex-half">
+                  <label htmlFor="midia_ouvinte_radio">Costuma ouvir rádio na viagem?</label>
+                  <div className="select-wrapper">
+                    <select id="midia_ouvinte_radio" value={formData.midia_ouvinte_radio} onChange={handleChange} required>
+                      <option value="" disabled>Selecione...</option><option value="Sim">Sim</option><option value="Não">Não</option>
+                    </select>
+                  </div>
+                </div>
+                {formData.midia_ouvinte_radio === 'Sim' && (
+                  <div className="form-group flex-half slide-down">
+                    <label htmlFor="midia_radio_preferida">Qual rádio mais ouve?</label>
+                    <input type="text" id="midia_radio_preferida" className="input-field" value={formData.midia_radio_preferida} onChange={handleChange} required />
+                  </div>
+                )}
+                <div className="form-group flex-full">
+                  <label htmlFor="midia_interesse_radio_nova381">Ouviria rádio exclusiva Nova 381?</label>
+                  <div className="select-wrapper">
+                    <select id="midia_interesse_radio_nova381" value={formData.midia_interesse_radio_nova381} onChange={handleChange} required>
+                      <option value="" disabled>Selecione...</option><option value="Sim">Sim</option><option value="Não">Não</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {formData.veiculo_tipo === 'Carga' && (
+                <React.Fragment>
+                  <h3 className="section-title slide-down">5. Transporte de Carga</h3>
+                  <div className="flex-row slide-down">
+                    <div className="form-group flex-half">
+                      <label htmlFor="carga_situacao">Estado da Carga</label>
+                      <div className="select-wrapper">
+                        <select id="carga_situacao" value={formData.carga_situacao} onChange={handleChange} required>
+                          <option value="" disabled>Selecione...</option>
+                          <option value="Carregado">Carregado</option>
+                          <option value="Vazio">Vazio</option>
+                        </select>
+                      </div>
+                    </div>
+                    {formData.carga_situacao === 'Carregado' && (
+                      <React.Fragment>
+                        <div className="form-group flex-half">
+                          <label htmlFor="carga_mercadoria">Tipo de Produto</label>
+                          <input type="text" id="carga_mercadoria" className="input-field" value={formData.carga_mercadoria} onChange={handleChange} required />
+                        </div>
+                        <div className="form-group flex-half">
+                          <label htmlFor="carga_ponto_carregamento">Ponto de Carregamento</label>
+                          <input type="text" id="carga_ponto_carregamento" className="input-field" value={formData.carga_ponto_carregamento} onChange={handleChange} required />
+                        </div>
+                        <div className="form-group flex-half">
+                          <label htmlFor="carga_ponto_descarregamento">Ponto de Descarregamento</label>
+                          <input type="text" id="carga_ponto_descarregamento" className="input-field" value={formData.carga_ponto_descarregamento} onChange={handleChange} required />
+                        </div>
+                        <div className="form-group flex-half">
+                          <label htmlFor="carga_container">Carga em container?</label>
+                          <div className="select-wrapper">
+                            <select id="carga_container" value={formData.carga_container} onChange={handleChange} required>
+                              <option value="" disabled>Selecione...</option><option value="Sim">Sim</option><option value="Não">Não</option>
+                            </select>
+                          </div>
+                        </div>
+                      </React.Fragment>
+                    )}
+                  </div>
+                </React.Fragment>
+              )}
+
+              <h3 className="section-title">6. Observações (Opcional)</h3>
+              <div className="form-group flex-full">
+                <textarea id="obs" className="input-field" rows="3" value={formData.obs} onChange={handleChange} placeholder="Anotações gerais..." />
+              </div>
+
+              <button type="submit" disabled={loading || cities.length === 0} className="submit-btn">
+                {loading ? <React.Fragment><span className="loading-spinner"></span>Salvando...</React.Fragment> : 'Salvar Pesquisa'}
+              </button>
+
+              {message && <div className={`message ${messageType}`}>{message}</div>}
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<TrafficSurvey />);
+  </script>
+</body>
+</html>
